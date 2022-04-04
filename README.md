@@ -7,8 +7,8 @@ Reliably run cleanup code upon program termination.
 
 ## Table of Contents
 
-- [Why does this exist?](#why-does-this-exist?)
-- [What can it do?](#what-can-it-do?)
+- [Why does this exist?](#why-does-this-exist)
+- [What can it do?](#what-can-it-do)
 - [Quickstart](#quickstart)
 
 ## Why does this exist?
