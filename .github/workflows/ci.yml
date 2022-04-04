@@ -1,12 +1,13 @@
 name: CI
 
 on:
-  pull_request:
-    paths:
-      - "*"
   workflow_dispatch:
     paths:
       - "*"
+  pull_request:
+    paths:
+      - "setup.py"
+      - "pyterminate/*"
   push:
     paths:
       - "setup.py"

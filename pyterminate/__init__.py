@@ -1,9 +1,3 @@
-"""
-File:
------
-
-"""
-
 from collections import defaultdict
 import atexit
 import signal
@@ -23,12 +17,20 @@ def register(
     args: tuple = tuple(),
     kwargs: Optional[Dict[str, Any]] = None,
     signals=(signal.SIGTERM,),
-    successful_exit: bool = False
+    successful_exit: bool = False,
+    keyboard_interrupt_on_sigint: bool = False,
 ) -> Callable:
     kwargs = kwargs or {}
 
     def decorator(func: Callable) -> Callable:
-        return _register_impl(func, args, kwargs, signals, successful_exit)
+        return _register_impl(
+            func,
+            args,
+            kwargs,
+            signals,
+            successful_exit,
+            keyboard_interrupt_on_sigint
+        )
 
     return decorator(func) if func else decorator
 
@@ -46,6 +48,7 @@ def _register_impl(
     kwargs: Dict[str, Any],
     signals: Tuple[int, ...],
     successful_exit: bool,
+    keyboard_interrupt_on_sigint: bool,
 ) -> Callable:
     def exit_handler(*args: Any, **kwargs: Any) -> Any:
         if func not in _registered_funcs:
@@ -58,14 +61,26 @@ def _register_impl(
         signal.signal(sig, signal.SIG_IGN)
 
         exit_handler(*args, **kwargs)
-        prev_handler = _signal_to_prev_handler[func][sig][-1]
-        if callable(prev_handler) and prev_handler != signal.default_int_handler:
+
+        if _signal_to_prev_handler[func][sig]:
+            prev_handler = _signal_to_prev_handler[func][sig].pop()
             prev_handler(sig, frame)
+
+        if keyboard_interrupt_on_sigint and sig == signal.SIGINT:
+            raise KeyboardInterrupt
 
         sys.exit(0 if successful_exit else sig)
 
     for sig in signals:
-        _signal_to_prev_handler[func][sig].append(signal.signal(sig, signal_handler))
+        prev_handler = signal.signal(sig, signal_handler)
+
+        if not callable(prev_handler):
+            continue
+
+        if prev_handler == signal.default_int_handler:
+            continue
+
+        _signal_to_prev_handler[func][sig].append(prev_handler)
 
     _registered_funcs.add(func)
     _func_to_wrapper[func] = exit_handler
