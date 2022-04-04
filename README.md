@@ -31,25 +31,23 @@ idempotent), and that a previously registered signal handler gets called.
 This packages does or allows the following behavior:
 
 - Register a function to be called on program termination
-    - Always on normal or exception-caused termination
-      `@pyterminate.register`
-    - Configurable for any desired signals
+    - Always on normal or exception-caused termination: `@pyterminate.register`
+    - Configurable for any desired signals:<br/>
       `@pyterminate.register(signals=(signal.SIGINT, signal.SIGABRT))`
 
 - Allows multiple functions to be registered
 
 - Will call previous registered signal handlers
 
-- Allows zero or non-zero exit codes on captured signals
+- Allows zero or non-zero exit codes on captured signals:<br/>
   `@pyterminate.register(successful_exit=True)`
 
-- Allows suppressing or throwing of `KeyboardInterrupt` on `SIGINT`
+- Allows suppressing or throwing of `KeyboardInterrupt` on `SIGINT`:<br/>
   `@pyterminate.register(keyboard_interrupt_on_sigint=True)`
     - You may want to throw a `KeyboardInterrupt` if there is additional
       exception handling defined.
 
-- Allows functions to be unregistered
-  `pyterminate.unregister(func)`
+- Allows functions to be unregistered: `pyterminate.unregister(func)`
 
 - Ignore multiple repeated signals to allow the registered functions to
   complete
