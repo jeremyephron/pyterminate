@@ -1,0 +1,28 @@
+name: lint
+
+on:
+  pull_request:
+    paths:
+      - "**.py"
+  push:
+    paths:
+      - "**.py"
+
+jobs:
+  flake8:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+          architecture: x64
+
+      - name: Run flake8
+        uses: py-actions/flake8@v2
+        with:
+          max-line-length: "90"
