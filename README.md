@@ -69,6 +69,7 @@ import signal
 
 import pyterminate
 
+
 @pyterminate.register(
     args=(None,),
     kwargs={"b": 42},
