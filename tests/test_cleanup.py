@@ -143,6 +143,30 @@ def multiple_register_program(
     sys.exit(0)
 
 
+def duplicate_register_program(
+    register_kwargs,
+    value,
+    should_cleanup,
+    setup_is_done,
+    cconn
+) -> None:
+    import pyterminate
+
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(66))
+
+    @pyterminate.register(**register_kwargs)
+    def cleanup(a=1, b=0):
+        value.value += (a + b)
+
+    pyterminate.register(cleanup, **register_kwargs)
+    pyterminate.register(cleanup, **register_kwargs)
+
+    setup_is_done.set()
+    assert should_cleanup.wait(timeout=5)
+
+    sys.exit(0)
+
+
 @pyterminate.exit_with_signal(signal.SIGUSR1)
 def simple_program_exit_with_signal(*args: Any, **kwargs: Any) -> None:
     simple_program(*args, **kwargs)
@@ -346,4 +370,20 @@ def test_exit_with_signal_on_exc(proc: ProcessUnderTest) -> None:
     proc.join()
 
     assert proc.exitcode == signal.SIGUSR1
+    assert proc.n_cleanup_calls == 1
+
+
+@pytest.mark.parametrize('proc', [duplicate_register_program], indirect=True)
+def test_duplicate_register(proc: ProcessUnderTest) -> None:
+    """
+    Tests that the function is only called once with duplicate registrations.
+
+    """
+
+    proc.start()
+    proc.setup_is_done.wait()
+    proc.should_cleanup.set()
+    proc.join()
+
+    assert proc.exitcode == 0
     assert proc.n_cleanup_calls == 1
