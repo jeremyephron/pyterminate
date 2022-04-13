@@ -8,6 +8,8 @@ at program termination.
 
 from collections import defaultdict
 import atexit
+import functools
+import os
 import signal
 import sys
 from types import FrameType
@@ -94,11 +96,9 @@ def _register_impl(
     This function is the internal implementation of registration, and should
     not be called by a user, who should called register() instead.
 
-    Idempotent handlers are created for both atexit and signal handling.
-    The currently handled signal is ignored during the signal handler to allow
-    for the registered functions to complete when potentially receiving
-    multiple repeated signals. However, it can be canceled upon receipt of
-    another signal.
+    Idempotent handlers are created for both atexit and signal handling. All
+    requested signals are ignored while registered function is executing, and
+    are restored afterward.
 
     Args:
         func: Function to register.
@@ -115,16 +115,21 @@ def _register_impl(
 
     """
 
-    def exit_handler(*args: Any, **kwargs: Any) -> Any:
+    def exit_handler(*args: Any, **kwargs: Any) -> None:
         if func not in _registered_funcs:
             return
 
+        prev_handlers = {}
+        for sig in signals:
+            prev_handlers[sig] = signal.signal(sig, signal.SIG_IGN)
+
         _registered_funcs.remove(func)
-        return func(*args, **kwargs)
+        func(*args, **kwargs)
+
+        for sig, handler in prev_handlers.items():
+            signal.signal(sig, handler)
 
     def signal_handler(sig: int, frame: Optional[FrameType]) -> None:
-        signal.signal(sig, signal.SIG_IGN)
-
         exit_handler(*args, **kwargs)
 
         if _signal_to_prev_handler[func][sig]:
@@ -153,3 +158,29 @@ def _register_impl(
     atexit.register(exit_handler, *args, **kwargs)
 
     return func
+
+
+def exit_with_signal(signum: int) -> Callable:
+    """
+    Creates a decorator for raising a given signal on exit.
+
+    Args:
+        signum: The signal to raise on exit.
+
+    Returns:
+        decorator: Decorator that executes a function and raises a signal
+            afterward.
+
+    """
+
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> None:
+            try:
+                func(*args, **kwargs)
+            finally:
+                os.kill(os.getpid(), signum)
+
+        return wrapper
+
+    return decorator
