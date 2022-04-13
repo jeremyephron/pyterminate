@@ -10,6 +10,7 @@ Reliably run cleanup code upon program termination.
 - [Why does this exist?](#why-does-this-exist)
 - [What can it do?](#what-can-it-do)
 - [Quickstart](#quickstart)
+- [Tips and tricks](#tips-and-tricks)
 
 ## Why does this exist?
 
@@ -52,11 +53,10 @@ This packages does or allows the following behavior:
 
 - Allows functions to be unregistered: `pyterminate.unregister(func)`
 
-- Ignore multiple repeated signals to allow the registered functions to
-  complete
-  - However, it can be canceled upon receipt of another signal. Desired
-    behavior could vary application to application, but this feels appropriate
-    for the most common known use cases.
+- Ignore requested signals while registered function is executing, ensuring
+  that it is not interrupted.
+  - It's important to note that `SIGKILL` and calls to `os._exit()` cannot be
+    ignored.
 
 ## Quickstart
 
@@ -83,4 +83,52 @@ def cleanup(*args, **kwargs):
 # or
 
 pyterminate.register(cleanup, ...)
+```
+
+## Tips and tricks
+
+### Multiprocessing start method
+
+When starting processes with Python's
+[`multiprocessing`](https://docs.python.org/3/library/multiprocessing.html)
+module, the `fork` method will fail to call registered functions on exit, since
+the process is ended with `os._exit()` internally, which bypasses all cleanup
+and immediately kills the process.
+
+One way of getting around this are using the `"spawn"` start method if that
+is acceptable for your application. Another method is to register your function
+to a user-defined signal, and wrap your process code in try-except block,
+raising the user-defined signal at the end. `pyterminate` provides this
+functionality in the form of the `exit_with_signal` decorator, which simply
+wraps the decorated function in a try-finally block, and raises the given
+signal. Example usage:
+
+```python3
+import multiprocessing as mp
+import signal
+
+import pyterminate
+
+
+@pyterminate.exit_with_signal(signal.SIGUSR1)
+def run_process():
+
+    @pyterminate.register(signals=[signal.SIGUSR1, signal.SIGINT, signal.SIGTERM])
+    def cleanup():
+        ...
+
+    ...
+
+
+if __name__ == "__main__"
+    mp.set_start_method("fork")
+
+    proc = mp.Process(target=run_process)
+    proc.start()
+
+    try:
+        proc.join(timeout=300)
+    except TimeoutError:
+        proc.terminate()
+        proc.join()
 ```

@@ -6,6 +6,8 @@ from typing import Any, Callable, Dict, Optional
 
 import pytest
 
+import pyterminate
+
 ProgramType = Callable[[Dict[str, Any], mp.Value, mp.Event, mp.Event, mp.Pipe], None]
 
 
@@ -17,9 +19,9 @@ class ProcessUnderTest(mp.Process):
     def __init__(self, program: ProgramType) -> None:
         self.setup_is_done = mp.Event()
         self.should_cleanup = mp.Event()
-        self.register_kwargs = {"signals": (signal.SIGINT, signal.SIGTERM)}
+        self.register_kwargs = {'signals': (signal.SIGINT, signal.SIGTERM)}
 
-        self._n_calls = mp.Value("i", 0)
+        self._n_calls = mp.Value('i', 0)
 
         self._pconn, self._cconn = mp.Pipe()
 
@@ -101,10 +103,9 @@ def unregister_program(
     def cleanup(a=1, b=0):
         value.value += (a + b)
 
-    setup_is_done.set()
-
     pyterminate.unregister(cleanup)
 
+    setup_is_done.set()
     assert should_cleanup.wait(timeout=5)
 
     sys.exit(0)
@@ -140,6 +141,11 @@ def multiple_register_program(
     assert should_cleanup.wait(timeout=5)
 
     sys.exit(0)
+
+
+@pyterminate.exit_with_signal(signal.SIGUSR1)
+def simple_program_exit_with_signal(*args: Any, **kwargs: Any) -> None:
+    simple_program(*args, **kwargs)
 
 
 @pytest.fixture(scope='function')
@@ -301,3 +307,43 @@ def test_multiple_register(proc: ProcessUnderTest) -> None:
 
     assert proc.exitcode == 66
     assert proc.n_cleanup_calls == 2
+
+
+@pytest.mark.parametrize(
+    'proc', [simple_program_exit_with_signal], indirect=True
+)
+def test_exit_with_signal(proc: ProcessUnderTest) -> None:
+    """Tests that the exit_with_signal decorator works on exceptions."""
+
+    proc.register_kwargs.update(signals=(signal.SIGUSR1,))
+
+    proc.start()
+    proc.setup_is_done.wait()
+
+    proc.raise_exception(None)
+    proc.should_cleanup.set()
+
+    proc.join()
+
+    assert proc.exitcode == signal.SIGUSR1
+    assert proc.n_cleanup_calls == 1
+
+
+@pytest.mark.parametrize(
+    'proc', [simple_program_exit_with_signal], indirect=True
+)
+def test_exit_with_signal_on_exc(proc: ProcessUnderTest) -> None:
+    """Tests that the exit_with_signal decorator works on exceptions."""
+
+    proc.register_kwargs.update(signals=(signal.SIGUSR1,))
+
+    proc.start()
+    proc.setup_is_done.wait()
+
+    proc.raise_exception(Exception())
+    proc.should_cleanup.set()
+
+    proc.join()
+
+    assert proc.exitcode == signal.SIGUSR1
+    assert proc.n_cleanup_calls == 1
