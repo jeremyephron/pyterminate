@@ -10,7 +10,9 @@ Reliably run cleanup code upon program termination.
 - [Why does this exist?](#why-does-this-exist)
 - [What can it do?](#what-can-it-do)
 - [Quickstart](#quickstart)
-- [Tips and tricks](#tips-and-tricks)
+- [Tips, tricks, and other notes](#tips-tricks-and-other-notes)
+  - [Duplicate registration after forking](#duplicate-registration-after-forking)
+  - [Multiprocessing start method](#multiprocessing-start-method)
 
 ## Why does this exist?
 
@@ -85,7 +87,17 @@ def cleanup(*args, **kwargs):
 pyterminate.register(cleanup, ...)
 ```
 
-## Tips and tricks
+## Tips, tricks, and other notes
+
+### Duplicate registration after forking
+
+Since creating a new process through forking duplicates the entire process,
+any previously registered functions will also be registered in the forked
+process. This is an obvious consequence of forking, but important to 
+consider if the registered functions are accessing shared resources. To 
+avoid this behavior, you can unregister the function at the beginning of
+the forked process, gate based on the process' ID, or use any other 
+synchronization method that's appropriate.
 
 ### Multiprocessing start method
 
