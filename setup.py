@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name='pyterminate',
-    version='0.0.4',
+    version='0.0.5',
     url='https://github.com/jeremyephron/pyterminate',
     author='Jeremy Ephron',
     author_email='jeremye@cs.stanford.edu',
@@ -11,6 +11,7 @@ setuptools.setup(
     long_description_content_type='text/markdown',
     packages=setuptools.find_packages(),
     install_requires=[],
+    package_data={"pyterminate": "py.typed"},
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Programming Language :: Python',
