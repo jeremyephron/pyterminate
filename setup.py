@@ -11,7 +11,7 @@ setuptools.setup(
     long_description_content_type='text/markdown',
     packages=setuptools.find_packages(),
     install_requires=[],
-    package_data={"pyterminate": "py.typed"},
+    package_data={"pyterminate": ["py.typed"]},
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Programming Language :: Python',
