@@ -13,7 +13,17 @@ import os
 import signal
 import sys
 from types import FrameType
-from typing import Any, Callable, DefaultDict, Dict, List, Optional, Set, Tuple
+from typing import (
+    Any,
+    Callable,
+    DefaultDict,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Set,
+    Tuple
+)
 
 
 _registered_funcs: Set[Callable] = set()
@@ -28,7 +38,7 @@ def register(
     *,
     args: tuple = tuple(),
     kwargs: Optional[Dict[str, Any]] = None,
-    signals: Tuple[int] = (signal.SIGTERM,),
+    signals: Iterable[Union[signal.Signals, int], ...] = (signal.SIGTERM,),
     successful_exit: bool = False,
     keyboard_interrupt_on_sigint: bool = False,
 ) -> Callable:
@@ -86,7 +96,7 @@ def _register_impl(
     func: Callable,
     args: tuple,
     kwargs: Dict[str, Any],
-    signals: Tuple[int, ...],
+    signals: Iterable[Union[signal.Signals, int], ...],
     successful_exit: bool,
     keyboard_interrupt_on_sigint: bool,
 ) -> Callable:
@@ -160,7 +170,7 @@ def _register_impl(
     return func
 
 
-def exit_with_signal(signum: int) -> Callable:
+def exit_with_signal(signum: Union[signal.Signals, int]) -> Callable:
     """
     Creates a decorator for raising a given signal on exit.
 
