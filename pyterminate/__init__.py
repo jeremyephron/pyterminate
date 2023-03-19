@@ -38,7 +38,7 @@ def register(
     *,
     args: tuple = tuple(),
     kwargs: Optional[Dict[str, Any]] = None,
-    signals: Iterable[Union[signal.Signals, int], ...] = (signal.SIGTERM,),
+    signals: Iterable[Union[signal.Signals, int]] = (signal.SIGTERM,),
     successful_exit: bool = False,
     keyboard_interrupt_on_sigint: bool = False,
 ) -> Callable:
@@ -96,7 +96,7 @@ def _register_impl(
     func: Callable,
     args: tuple,
     kwargs: Dict[str, Any],
-    signals: Iterable[Union[signal.Signals, int], ...],
+    signals: Iterable[Union[signal.Signals, int]],
     successful_exit: bool,
     keyboard_interrupt_on_sigint: bool,
 ) -> Callable:
