@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name='pyterminate',
-    version='0.0.6',
+    version='0.0.7',
     url='https://github.com/jeremyephron/pyterminate',
     author='Jeremy Ephron',
     author_email='jeremye@cs.stanford.edu',
