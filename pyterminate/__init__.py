@@ -28,6 +28,7 @@ from typing import (
 
 _registered_funcs: Set[Callable] = set()
 _func_to_wrapper: Dict[Callable, Callable] = {}
+_func_to_wrapper_sig: Dict[Callable, Callable] = {}
 _signal_to_prev_handler: DefaultDict[Callable, DefaultDict[int, List[Callable]]] = (
     defaultdict(lambda: defaultdict(list))
 )
@@ -78,7 +79,8 @@ def register(
 
 def unregister(func: Callable) -> None:
     """
-    Unregisters a previously registered function from being called at exit.
+    Unregisters a previously registered function from being called at exit. Also
+    unregisters a function from being called after the registered signals.
 
     Args:
         func: A previously registered function. The call is a no-op if not
@@ -88,6 +90,35 @@ def unregister(func: Callable) -> None:
 
     if func in _func_to_wrapper:
         atexit.unregister(_func_to_wrapper[func])
+        del _func_to_wrapper[func]
+
+    wrapper = None
+    if func in _func_to_wrapper_sig:
+        wrapper = _func_to_wrapper_sig[func]
+        del _func_to_wrapper_sig[func]
+
+    if func in _signal_to_prev_handler:
+
+        for fn, signals_to_prev in _signal_to_prev_handler.items():
+            for sig in signals_to_prev:
+
+                if sig not in _signal_to_prev_handler[func]:
+                    continue
+
+                prev_for_func_list = _signal_to_prev_handler[func][sig]
+                if len(prev_for_func_list) > 0:
+                    prev_for_func = prev_for_func_list[0]
+                else:
+                    prev_for_func = None
+
+                prev_handler = _signal_to_prev_handler[fn][sig]
+                if len(prev_handler) > 0 and prev_handler[0] == wrapper:
+                    prev_handler[0] = prev_for_func
+
+                if signal.getsignal(sig) == wrapper:
+                    signal.signal(sig, prev_for_func)
+
+        del _signal_to_prev_handler[func]
 
     _registered_funcs.remove(func)
 
@@ -164,6 +195,7 @@ def _register_impl(
 
     _registered_funcs.add(func)
     _func_to_wrapper[func] = exit_handler
+    _func_to_wrapper_sig[func] = signal_handler
 
     atexit.register(exit_handler, *args, **kwargs)
 
