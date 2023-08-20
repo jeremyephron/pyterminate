@@ -6,9 +6,9 @@ at program termination.
 
 """
 
-from collections import defaultdict
 import atexit
 import functools
+import logging
 import os
 import signal
 import sys
@@ -16,21 +16,34 @@ from types import FrameType
 from typing import (
     Any,
     Callable,
-    DefaultDict,
     Dict,
     Iterable,
     List,
     Optional,
-    Set,
     Union
 )
+from weakref import WeakSet, WeakKeyDictionary
 
+logger = logging.getLogger(__name__)
 
-_registered_funcs: Set[Callable] = set()
-_func_to_wrapper: Dict[Callable, Callable] = {}
-_func_to_wrapper_sig: Dict[Callable, Callable] = {}
-_signal_to_prev_handler: DefaultDict[Callable, DefaultDict[int, List[Callable]]] = (
-    defaultdict(lambda: defaultdict(list))
+# The set of all functions currently registered.
+_registered_funcs: 'WeakSet[Callable]' = WeakSet()
+
+# A mapping from registered functions to their wrappers called on exit.
+_func_to_wrapper_exit: 'WeakKeyDictionary[Callable, Callable]' = (
+    WeakKeyDictionary()
+)
+
+# A mapping from registered functions to their wrappers called on signal.
+_func_to_wrapper_sig: 'WeakKeyDictionary[Callable, Callable]' = (
+    WeakKeyDictionary()
+)
+
+# { Registered function: { signal number: [ previous signal handler ] } }
+# The innermost list is purely for reference management, and should always be
+# of length <= 1.
+_signal_to_prev_handler: 'WeakKeyDictionary[Callable, Dict[int, List[Callable]]]' = (
+    WeakKeyDictionary()
 )
 
 
@@ -79,8 +92,8 @@ def register(
 
 def unregister(func: Callable) -> None:
     """
-    Unregisters a previously registered function from being called at exit. Also
-    unregisters a function from being called after the registered signals.
+    Unregisters a previously registered function from being called at exit or
+    on signal.
 
     Args:
         func: A previously registered function. The call is a no-op if not
@@ -88,39 +101,55 @@ def unregister(func: Callable) -> None:
 
     """
 
-    if func in _func_to_wrapper:
-        atexit.unregister(_func_to_wrapper[func])
-        del _func_to_wrapper[func]
+    # Unregister and remove exit handler.
+    if func in _func_to_wrapper_exit:
+        atexit.unregister(_func_to_wrapper_exit[func])
+        del _func_to_wrapper_exit[func]
 
-    wrapper = None
+    # Remove signal handler.
+    wrapper_sig = None
     if func in _func_to_wrapper_sig:
-        wrapper = _func_to_wrapper_sig[func]
+        wrapper_sig = _func_to_wrapper_sig[func]
         del _func_to_wrapper_sig[func]
 
+    # Re-link chain of signal handlers around the unregistered function.
+    # The length of collections to iterate through should be small, so
+    # implementation is naive. If greater efficiency is needed, can add
+    # more direct references for O(1) time to re-link.
     if func in _signal_to_prev_handler:
+
+        # Register previous signal handlers if this is the most
+        # recently registered one.
+        for sig in _signal_to_prev_handler[func]:
+            if signal.getsignal(sig) is not wrapper_sig:
+                continue
+
+            if _signal_to_prev_handler[func][sig]:
+                handler = _signal_to_prev_handler[func][sig][0]
+            else:
+                handler = signal.SIG_DFL
+
+            signal.signal(sig, handler)
 
         for fn, signals_to_prev in _signal_to_prev_handler.items():
             for sig in signals_to_prev:
 
-                if sig not in _signal_to_prev_handler[func]:
+                # Skip if fn wasn't registered for the relevant signals or not
+                # pointing to func as the previous handler.
+                if not (
+                    sig in _signal_to_prev_handler[func]
+                    and _signal_to_prev_handler[fn][sig]
+                    and _signal_to_prev_handler[fn][sig][0] is wrapper_sig
+                ):
                     continue
 
-                prev_for_func_list = _signal_to_prev_handler[func][sig]
-                if len(prev_for_func_list) > 0:
-                    prev_for_func = prev_for_func_list[0]
-                else:
-                    prev_for_func = None
-
-                prev_handler = _signal_to_prev_handler[fn][sig]
-                if len(prev_handler) > 0 and prev_handler[0] == wrapper:
-                    prev_handler[0] = prev_for_func
-
-                if signal.getsignal(sig) == wrapper:
-                    signal.signal(sig, prev_for_func)
+                _signal_to_prev_handler[fn][sig] = (
+                    _signal_to_prev_handler[func][sig]
+                )
 
         del _signal_to_prev_handler[func]
 
-    _registered_funcs.remove(func)
+    _registered_funcs.discard(func)
 
 
 def _register_impl(
@@ -156,12 +185,20 @@ def _register_impl(
 
     """
 
+    if func in _registered_funcs:
+        logger.warning(
+            f"Attempted to register a function more than once ({func}). The "
+            f"duplicate calls to register do nothing and this is usually a "
+            f"mistake."
+        )
+        return func
+
     def exit_handler(*args: Any, **kwargs: Any) -> None:
         if func not in _registered_funcs:
             return
 
         prev_handlers = {}
-        for sig in signals:
+        for sig in _signal_to_prev_handler[func]:
             prev_handlers[sig] = signal.signal(sig, signal.SIG_IGN)
 
         _registered_funcs.remove(func)
@@ -170,20 +207,26 @@ def _register_impl(
         for sig, handler in prev_handlers.items():
             signal.signal(sig, handler)
 
+        unregister(func)
+
     def signal_handler(sig: int, frame: Optional[FrameType]) -> None:
         exit_handler(*args, **kwargs)
 
-        if _signal_to_prev_handler[func][sig]:
-            prev_handler = _signal_to_prev_handler[func][sig].pop()
-            prev_handler(sig, frame)
+        handler = signal.getsignal(sig)
+        if callable(handler):
+            handler(sig, frame)
 
         if keyboard_interrupt_on_sigint and sig == signal.SIGINT:
             raise KeyboardInterrupt
 
         sys.exit(0 if successful_exit else sig)
 
+    _signal_to_prev_handler.setdefault(func, {})
+
     for sig in signals:
         prev_handler = signal.signal(sig, signal_handler)
+
+        _signal_to_prev_handler[func].setdefault(sig, [])
 
         if not callable(prev_handler):
             continue
@@ -194,7 +237,7 @@ def _register_impl(
         _signal_to_prev_handler[func][sig].append(prev_handler)
 
     _registered_funcs.add(func)
-    _func_to_wrapper[func] = exit_handler
+    _func_to_wrapper_exit[func] = exit_handler
     _func_to_wrapper_sig[func] = signal_handler
 
     atexit.register(exit_handler, *args, **kwargs)
